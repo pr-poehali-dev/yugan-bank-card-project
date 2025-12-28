@@ -5,12 +5,14 @@ export type User = {
   firstName: string;
   lastName: string;
   middleName: string;
+  isPremium: boolean;
+  premiumExpiresAt?: Date;
 };
 
 export type CardType = {
   id: string;
   name: string;
-  type: 'debit-child' | 'debit-youth' | 'credit' | 'sticker' | 'other';
+  type: 'debit-child' | 'debit-youth' | 'credit' | 'sticker' | 'other' | 'premium';
   format: 'virtual' | 'plastic';
   balance: number;
   cardNumber: string;
@@ -20,9 +22,11 @@ export type CardType = {
   paymentSystem: PaymentSystem;
   color: string;
   isBlocked?: boolean;
+  dailyLimit?: number;
+  monthlyLimit?: number;
 };
 
-export type Page = 'home' | 'cards' | 'credits' | 'transfers' | 'assistant' | 'profile' | 'friends';
+export type Page = 'home' | 'cards' | 'transfers' | 'assistant' | 'profile' | 'friends' | 'more';
 
 export type Friend = {
   id: string;

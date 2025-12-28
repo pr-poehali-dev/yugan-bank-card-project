@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
 import Icon from '@/components/ui/icon';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
@@ -7,9 +7,9 @@ import { Card, CardContent } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from '@/components/ui/dialog';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
-import { Textarea } from '@/components/ui/textarea';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { ScrollArea } from '@/components/ui/scroll-area';
+import { Switch } from '@/components/ui/switch';
 import { toast } from 'sonner';
 import { User, CardType, Page, Friend, ServiceProvider } from '@/types';
 import { generateCard, formatCardNumberDisplay, getPaymentSystemName } from '@/utils/cardGenerator';
@@ -35,12 +35,14 @@ const Index = () => {
   const [showNewCardDialog, setShowNewCardDialog] = useState(false);
   const [showCardActionsDialog, setShowCardActionsDialog] = useState(false);
   const [showCardDetailDialog, setShowCardDetailDialog] = useState(false);
+  const [showCardLimitsDialog, setShowCardLimitsDialog] = useState(false);
   const [selectedCard, setSelectedCard] = useState<CardType | null>(null);
   const [showCreditDialog, setShowCreditDialog] = useState(false);
   const [showTransferDialog, setShowTransferDialog] = useState(false);
   const [showPaymentDialog, setShowPaymentDialog] = useState(false);
   const [showFriendDialog, setShowFriendDialog] = useState(false);
   const [showAssistantDialog, setShowAssistantDialog] = useState(false);
+  const [showPremiumDialog, setShowPremiumDialog] = useState(false);
   const [assistantMode, setAssistantMode] = useState<'chat' | 'call'>('chat');
 
   const [phone, setPhone] = useState('');
@@ -72,6 +74,9 @@ const Index = () => {
   const [friendLastName, setFriendLastName] = useState('');
   const [friendIsFamily, setFriendIsFamily] = useState(false);
 
+  const [cardDailyLimit, setCardDailyLimit] = useState('');
+  const [cardMonthlyLimit, setCardMonthlyLimit] = useState('');
+
   const [chatMessages, setChatMessages] = useState<{role: 'user' | 'bot', text: string}[]>([
     { role: 'bot', text: 'Привет! Я Банк-Бонг, ваш виртуальный помощник. Чем могу помочь?' }
   ]);
@@ -79,16 +84,53 @@ const Index = () => {
   const [isCallActive, setIsCallActive] = useState(false);
   const [callDuration, setCallDuration] = useState(0);
 
+  const createPremiumCard = () => {
+    const cardData = generateCard();
+    const premiumCard: CardType = {
+      id: 'premium-' + Date.now().toString(),
+      name: '💎 Премиум Юган',
+      type: 'premium',
+      format: 'plastic',
+      balance: 1000,
+      cardNumber: cardData.number,
+      cvv: cardData.cvv,
+      expiryMonth: cardData.expiryMonth,
+      expiryYear: cardData.expiryYear,
+      paymentSystem: cardData.paymentSystem,
+      color: 'from-yellow-400 via-amber-500 to-yellow-600',
+      isBlocked: false,
+      dailyLimit: 100000,
+      monthlyLimit: 1000000,
+    };
+    return premiumCard;
+  };
+
   const handleRegister = (e: React.FormEvent) => {
     e.preventDefault();
     if (!phone || !firstName || !lastName) {
       toast.error('Заполните все обязательные поля');
       return;
     }
-    setUser({ phone, firstName, lastName, middleName });
+    
+    const newUser: User = { 
+      phone, 
+      firstName, 
+      lastName, 
+      middleName,
+      isPremium: false
+    };
+    
+    setUser(newUser);
+    
+    const welcomeCard = createPremiumCard();
+    setCards([welcomeCard]);
+    
     setIsAuthenticated(true);
-    toast.success('Добро пожаловать в Юган Банк!');
+    toast.success('🎉 Добро пожаловать в Юган Банк! Вам начислено 1000₽ на приветственную карту!');
   };
+
+  const maxCards = user?.isPremium ? 10 : 3;
+  const maxCreditAmount = user?.isPremium ? Infinity : 100000;
 
   const handleCreateCard = () => {
     if (!newCardName) {
@@ -96,12 +138,21 @@ const Index = () => {
       return;
     }
 
-    const colors = {
+    if (cards.length >= maxCards) {
+      toast.error(user?.isPremium 
+        ? 'Достигнут лимит карт (10)' 
+        : 'Достигнут лимит карт. Оформите Премиум Юган для создания до 10 карт!'
+      );
+      return;
+    }
+
+    const colors: Record<CardType['type'], string> = {
       'debit-child': 'from-pink-400 to-purple-400',
       'debit-youth': 'from-blue-400 to-cyan-400',
       'credit': 'from-amber-400 to-orange-400',
       'sticker': 'from-green-400 to-emerald-400',
       'other': 'from-gray-400 to-slate-400',
+      'premium': 'from-yellow-400 via-amber-500 to-yellow-600',
     };
 
     const cardData = generateCard();
@@ -118,6 +169,8 @@ const Index = () => {
       paymentSystem: cardData.paymentSystem,
       color: colors[newCardType],
       isBlocked: false,
+      dailyLimit: 50000,
+      monthlyLimit: 300000,
     };
 
     setCards([...cards, newCard]);
@@ -151,6 +204,22 @@ const Index = () => {
     }
   };
 
+  const handleSetCardLimits = () => {
+    if (!selectedCard) return;
+
+    const dailyLimit = parseFloat(cardDailyLimit) || selectedCard.dailyLimit || 0;
+    const monthlyLimit = parseFloat(cardMonthlyLimit) || selectedCard.monthlyLimit || 0;
+
+    setCards(cards.map(c => 
+      c.id === selectedCard.id 
+        ? { ...c, dailyLimit, monthlyLimit } 
+        : c
+    ));
+
+    setShowCardLimitsDialog(false);
+    toast.success('Лимиты установлены');
+  };
+
   const handleCreditRequest = () => {
     if (!creditAmount || !creditCard) {
       toast.error('Заполните все поля');
@@ -158,6 +227,12 @@ const Index = () => {
     }
 
     const amount = parseFloat(creditAmount);
+
+    if (!user?.isPremium && amount > maxCreditAmount) {
+      toast.error(`Максимальная сумма кредита ${maxCreditAmount.toLocaleString('ru-RU')}₽. Оформите Премиум Юган для безлимитных кредитов!`);
+      return;
+    }
+
     setCards(cards.map(c => 
       c.id === creditCard 
         ? { ...c, balance: c.balance + amount }
@@ -267,6 +342,17 @@ const Index = () => {
     toast.success(`${friendFirstName} ${friendLastName} добавлен${friendIsFamily ? ' в семью' : ' в друзья'}`);
   };
 
+  const handleActivatePremium = () => {
+    if (!user) return;
+    
+    const expiresAt = new Date();
+    expiresAt.setMonth(expiresAt.getMonth() + 1);
+    
+    setUser({ ...user, isPremium: true, premiumExpiresAt: expiresAt });
+    setShowPremiumDialog(false);
+    toast.success('🎉 Премиум Юган активирован на 1 месяц!');
+  };
+
   const handleSendMessage = () => {
     if (!chatInput.trim()) return;
 
@@ -290,20 +376,22 @@ const Index = () => {
     setIsCallActive(true);
     setCallDuration(0);
     toast.success('Соединение с Банк-Бонг установлено');
-    
-    const interval = setInterval(() => {
-      setCallDuration(prev => prev + 1);
-    }, 1000);
-
-    setTimeout(() => {
-      clearInterval(interval);
-    }, 300000);
   };
 
   const handleEndCall = () => {
     setIsCallActive(false);
     toast.success('Звонок завершён');
   };
+
+  useEffect(() => {
+    let interval: NodeJS.Timeout;
+    if (isCallActive) {
+      interval = setInterval(() => {
+        setCallDuration(prev => prev + 1);
+      }, 1000);
+    }
+    return () => clearInterval(interval);
+  }, [isCallActive]);
 
   const handleLogout = () => {
     setIsAuthenticated(false);
@@ -316,7 +404,7 @@ const Index = () => {
 
   const handleResetAccount = () => {
     if (confirm('Вы уверены, что хотите сбросить аккаунт? Все карты будут удалены.')) {
-      setCards([]);
+      setCards([createPremiumCard()]);
       setFriends([]);
       toast.success('Аккаунт сброшен');
     }
@@ -386,6 +474,11 @@ const Index = () => {
                 />
               </div>
 
+              <div className="bg-accent/10 p-4 rounded-lg">
+                <p className="text-sm font-semibold mb-1">🎁 Приветственный бонус</p>
+                <p className="text-xs text-muted-foreground">При регистрации вы получите премиум-карту с 1000₽!</p>
+              </div>
+
               <Button type="submit" className="w-full" size="lg">
                 Зарегистрироваться
               </Button>
@@ -398,7 +491,15 @@ const Index = () => {
 
   const renderHome = () => (
     <div className="space-y-6">
-      <div className="bg-gradient-to-br from-primary to-primary/80 rounded-2xl p-6 text-white">
+      <div className="bg-gradient-to-br from-primary to-primary/80 rounded-2xl p-6 text-white relative overflow-hidden">
+        {user?.isPremium && (
+          <div className="absolute top-4 right-4">
+            <Badge className="bg-yellow-400 text-yellow-900 border-0">
+              <Icon name="Crown" size={14} className="mr-1" />
+              Premium
+            </Badge>
+          </div>
+        )}
         <p className="text-sm opacity-90 mb-1">Добро пожаловать</p>
         <h2 className="text-2xl font-bold mb-4">{user?.firstName} {user?.lastName}</h2>
         <div className="bg-white/20 backdrop-blur-sm rounded-xl p-4">
@@ -408,6 +509,21 @@ const Index = () => {
           </p>
         </div>
       </div>
+
+      {!user?.isPremium && (
+        <Card className="p-4 bg-gradient-to-r from-yellow-50 to-amber-50 border-yellow-200 cursor-pointer hover:shadow-lg transition-shadow" onClick={() => setShowPremiumDialog(true)}>
+          <div className="flex items-center gap-3">
+            <div className="w-12 h-12 bg-gradient-to-br from-yellow-400 to-amber-500 rounded-full flex items-center justify-center">
+              <Icon name="Crown" size={24} className="text-white" />
+            </div>
+            <div className="flex-1">
+              <p className="font-semibold">Премиум Юган</p>
+              <p className="text-sm text-muted-foreground">До 10 карт, безлимитные кредиты и больше возможностей</p>
+            </div>
+            <Icon name="ChevronRight" size={20} className="text-muted-foreground" />
+          </div>
+        </Card>
+      )}
 
       <div>
         <h3 className="text-sm font-semibold mb-3 text-muted-foreground">Быстрые действия</h3>
@@ -443,55 +559,45 @@ const Index = () => {
           </Button>
         </div>
 
-        {cards.length === 0 ? (
-          <Card className="p-8 text-center">
-            <Icon name="CreditCard" size={48} className="mx-auto mb-3 text-muted-foreground" />
-            <p className="text-muted-foreground">У вас пока нет карт</p>
-            <Button onClick={() => setShowNewCardDialog(true)} className="mt-4">
-              Создать первую карту
-            </Button>
-          </Card>
-        ) : (
-          <div className="space-y-3">
-            {cards.slice(0, 3).map((card) => (
-              <Card 
-                key={card.id} 
-                className="overflow-hidden cursor-pointer hover:shadow-lg transition-shadow"
-                onClick={() => {
-                  setSelectedCard(card);
-                  setShowCardActionsDialog(true);
-                }}
-              >
-                <div className={`h-2 bg-gradient-to-r ${card.color}`} />
-                <CardContent className="p-4">
-                  <div className="flex justify-between items-start">
-                    <div className="flex-1">
-                      <div className="flex items-center gap-2 mb-1">
-                        <p className="font-semibold">{card.name}</p>
-                        {card.isBlocked && (
-                          <Badge variant="destructive" className="text-xs">Заблокирована</Badge>
-                        )}
-                      </div>
-                      <p className="text-sm text-muted-foreground">{formatCardNumberDisplay(card.cardNumber).slice(0, 19)}</p>
-                      <p className="text-xs text-muted-foreground mt-1">{getPaymentSystemName(card.paymentSystem)}</p>
+        <div className="space-y-3">
+          {cards.slice(0, 3).map((card) => (
+            <Card 
+              key={card.id} 
+              className="overflow-hidden cursor-pointer hover:shadow-lg transition-shadow"
+              onClick={() => {
+                setSelectedCard(card);
+                setShowCardActionsDialog(true);
+              }}
+            >
+              <div className={`h-2 bg-gradient-to-r ${card.color}`} />
+              <CardContent className="p-4">
+                <div className="flex justify-between items-start">
+                  <div className="flex-1">
+                    <div className="flex items-center gap-2 mb-1">
+                      <p className="font-semibold">{card.name}</p>
+                      {card.isBlocked && (
+                        <Badge variant="destructive" className="text-xs">Заблокирована</Badge>
+                      )}
                     </div>
-                    <div className="text-right">
-                      <p className="font-bold text-lg">{card.balance.toLocaleString('ru-RU')} ₽</p>
-                      <Badge variant="secondary" className="mt-1 text-xs">
-                        {card.format === 'virtual' ? 'Виртуальная' : 'Пластиковая'}
-                      </Badge>
-                    </div>
+                    <p className="text-sm text-muted-foreground">{formatCardNumberDisplay(card.cardNumber).slice(0, 19)}</p>
+                    <p className="text-xs text-muted-foreground mt-1">{getPaymentSystemName(card.paymentSystem)}</p>
                   </div>
-                </CardContent>
-              </Card>
-            ))}
-            {cards.length > 3 && (
-              <Button variant="ghost" className="w-full" onClick={() => setCurrentPage('cards')}>
-                Показать все карты ({cards.length})
-              </Button>
-            )}
-          </div>
-        )}
+                  <div className="text-right">
+                    <p className="font-bold text-lg">{card.balance.toLocaleString('ru-RU')} ₽</p>
+                    <Badge variant="secondary" className="mt-1 text-xs">
+                      {card.format === 'virtual' ? 'Виртуальная' : 'Пластиковая'}
+                    </Badge>
+                  </div>
+                </div>
+              </CardContent>
+            </Card>
+          ))}
+          {cards.length > 3 && (
+            <Button variant="ghost" className="w-full" onClick={() => setCurrentPage('cards')}>
+              Показать все карты ({cards.length})
+            </Button>
+          )}
+        </div>
       </div>
     </div>
   );
@@ -502,7 +608,7 @@ const Index = () => {
         <h2 className="text-2xl font-bold">Мои карты</h2>
         <Button onClick={() => setShowNewCardDialog(true)}>
           <Icon name="Plus" size={20} className="mr-2" />
-          Создать карту
+          Создать
         </Button>
       </div>
 
@@ -624,29 +730,6 @@ const Index = () => {
           </div>
         </Card>
       </div>
-    </div>
-  );
-
-  const renderCredits = () => (
-    <div className="space-y-4">
-      <h2 className="text-2xl font-bold">Кредиты</h2>
-      
-      <Card className="p-6">
-        <div className="text-center mb-6">
-          <Icon name="TrendingUp" size={48} className="mx-auto mb-3 text-primary" />
-          <h3 className="text-xl font-semibold mb-2">Оформить кредит</h3>
-          <p className="text-muted-foreground">Получите средства моментально без процентов</p>
-        </div>
-
-        <Button 
-          onClick={() => setShowCreditDialog(true)} 
-          className="w-full" 
-          size="lg"
-          disabled={cards.length === 0}
-        >
-          {cards.length === 0 ? 'Создайте карту для получения кредита' : 'Оформить кредит'}
-        </Button>
-      </Card>
     </div>
   );
 
@@ -783,47 +866,115 @@ const Index = () => {
     </div>
   );
 
-  const renderProfile = () => (
+  const renderMore = () => (
     <div className="space-y-4">
-      <h2 className="text-2xl font-bold">Профиль</h2>
+      <h2 className="text-2xl font-bold">Ещё</h2>
 
-      <Card className="p-6">
-        <div className="flex items-center gap-4 mb-6">
-          <div className="w-16 h-16 bg-gradient-to-br from-primary to-accent rounded-full flex items-center justify-center text-white text-2xl font-bold">
-            {user?.firstName[0]}{user?.lastName[0]}
-          </div>
-          <div>
-            <p className="font-semibold text-lg">{user?.lastName} {user?.firstName} {user?.middleName}</p>
-            <p className="text-muted-foreground">{user?.phone}</p>
-          </div>
-        </div>
+      <div className="space-y-2">
+        <h3 className="text-sm font-semibold text-muted-foreground mb-2">Управление</h3>
+        
+        {!user?.isPremium && (
+          <Card className="p-4 cursor-pointer hover:shadow-lg transition-shadow bg-gradient-to-r from-yellow-50 to-amber-50 border-yellow-200" onClick={() => setShowPremiumDialog(true)}>
+            <div className="flex items-center gap-4">
+              <div className="w-12 h-12 bg-gradient-to-br from-yellow-400 to-amber-500 rounded-full flex items-center justify-center">
+                <Icon name="Crown" size={24} className="text-white" />
+              </div>
+              <div className="flex-1">
+                <p className="font-semibold">Премиум Юган</p>
+                <p className="text-sm text-muted-foreground">Получить больше возможностей</p>
+              </div>
+              <Icon name="ChevronRight" size={20} />
+            </div>
+          </Card>
+        )}
 
-        <div className="space-y-2">
-          <Button variant="outline" className="w-full justify-start" onClick={handleResetAccount}>
-            <Icon name="RotateCcw" size={20} className="mr-2" />
-            Сброс аккаунта
-          </Button>
-          <Button variant="outline" className="w-full justify-start">
-            <Icon name="Settings" size={20} className="mr-2" />
-            Настройки ассистента
-          </Button>
-          <Button variant="outline" className="w-full justify-start">
-            <Icon name="Baby" size={20} className="mr-2" />
-            Детский режим
-          </Button>
-          <Button variant="outline" className="w-full justify-start" onClick={() => {
-            setAssistantMode('chat');
-            setShowAssistantDialog(true);
-          }}>
-            <Icon name="HelpCircle" size={20} className="mr-2" />
-            Поддержка
-          </Button>
-          <Button variant="destructive" className="w-full justify-start" onClick={handleLogout}>
-            <Icon name="LogOut" size={20} className="mr-2" />
-            Выход из аккаунта
-          </Button>
-        </div>
-      </Card>
+        {user?.isPremium && (
+          <Card className="p-4 bg-gradient-to-r from-yellow-50 to-amber-50 border-yellow-200">
+            <div className="flex items-center gap-4">
+              <div className="w-12 h-12 bg-gradient-to-br from-yellow-400 to-amber-500 rounded-full flex items-center justify-center">
+                <Icon name="Crown" size={24} className="text-white" />
+              </div>
+              <div className="flex-1">
+                <p className="font-semibold">Премиум активен</p>
+                <p className="text-sm text-muted-foreground">
+                  До {user.premiumExpiresAt?.toLocaleDateString('ru-RU')}
+                </p>
+              </div>
+              <Badge className="bg-yellow-400 text-yellow-900">Активен</Badge>
+            </div>
+          </Card>
+        )}
+
+        <Card className="p-4 cursor-pointer hover:shadow-lg transition-shadow" onClick={() => setShowCreditDialog(true)}>
+          <div className="flex items-center gap-4">
+            <div className="w-12 h-12 bg-blue-500/10 rounded-full flex items-center justify-center">
+              <Icon name="Wallet" size={24} className="text-blue-600" />
+            </div>
+            <div className="flex-1">
+              <p className="font-semibold">Кредиты</p>
+              <p className="text-sm text-muted-foreground">
+                {user?.isPremium ? 'Безлимитные кредиты' : 'До 100,000₽'}
+              </p>
+            </div>
+            <Icon name="ChevronRight" size={20} />
+          </div>
+        </Card>
+
+        <Card className="p-4 cursor-pointer hover:shadow-lg transition-shadow" onClick={() => setCurrentPage('friends')}>
+          <div className="flex items-center gap-4">
+            <div className="w-12 h-12 bg-purple-500/10 rounded-full flex items-center justify-center">
+              <Icon name="Users" size={24} className="text-purple-600" />
+            </div>
+            <div className="flex-1">
+              <p className="font-semibold">Семья и друзья</p>
+              <p className="text-sm text-muted-foreground">Управление контактами</p>
+            </div>
+            <Icon name="ChevronRight" size={20} />
+          </div>
+        </Card>
+
+        <Card className="p-4 cursor-pointer hover:shadow-lg transition-shadow" onClick={() => {
+          setAssistantMode('chat');
+          setShowAssistantDialog(true);
+        }}>
+          <div className="flex items-center gap-4">
+            <div className="w-12 h-12 bg-green-500/10 rounded-full flex items-center justify-center">
+              <Icon name="Settings" size={24} className="text-green-600" />
+            </div>
+            <div className="flex-1">
+              <p className="font-semibold">Настройки ассистента</p>
+              <p className="text-sm text-muted-foreground">Персонализация Банк-Бонг</p>
+            </div>
+            <Icon name="ChevronRight" size={20} />
+          </div>
+        </Card>
+
+        <Card className="p-4 cursor-pointer hover:shadow-lg transition-shadow" onClick={handleResetAccount}>
+          <div className="flex items-center gap-4">
+            <div className="w-12 h-12 bg-orange-500/10 rounded-full flex items-center justify-center">
+              <Icon name="RotateCcw" size={24} className="text-orange-600" />
+            </div>
+            <div className="flex-1">
+              <p className="font-semibold">Сброс аккаунта</p>
+              <p className="text-sm text-muted-foreground">Удалить все карты и данные</p>
+            </div>
+            <Icon name="ChevronRight" size={20} />
+          </div>
+        </Card>
+
+        <Card className="p-4 cursor-pointer hover:shadow-lg transition-shadow" onClick={handleLogout}>
+          <div className="flex items-center gap-4">
+            <div className="w-12 h-12 bg-red-500/10 rounded-full flex items-center justify-center">
+              <Icon name="LogOut" size={24} className="text-red-600" />
+            </div>
+            <div className="flex-1">
+              <p className="font-semibold">Выход</p>
+              <p className="text-sm text-muted-foreground">Выйти из аккаунта</p>
+            </div>
+            <Icon name="ChevronRight" size={20} />
+          </div>
+        </Card>
+      </div>
     </div>
   );
 
@@ -831,11 +982,10 @@ const Index = () => {
     switch (currentPage) {
       case 'home': return renderHome();
       case 'cards': return renderCards();
-      case 'credits': return renderCredits();
       case 'transfers': return renderTransfers();
       case 'assistant': return renderAssistant();
       case 'friends': return renderFriends();
-      case 'profile': return renderProfile();
+      case 'more': return renderMore();
       default: return renderHome();
     }
   };
@@ -844,9 +994,8 @@ const Index = () => {
     { id: 'home' as Page, icon: 'Home', label: 'Главная' },
     { id: 'cards' as Page, icon: 'CreditCard', label: 'Карты' },
     { id: 'transfers' as Page, icon: 'ArrowRightLeft', label: 'Переводы' },
-    { id: 'friends' as Page, icon: 'Users', label: 'Друзья' },
     { id: 'assistant' as Page, icon: 'Bot', label: 'Ассистент' },
-    { id: 'profile' as Page, icon: 'User', label: 'Профиль' },
+    { id: 'more' as Page, icon: 'Menu', label: 'Ещё' },
   ];
 
   return (
@@ -931,7 +1080,7 @@ const Index = () => {
             </div>
             <div className="bg-muted/50 p-4 rounded-lg text-sm">
               <p className="text-muted-foreground">
-                Платёжная система будет выбрана автоматически
+                Платёжная система выбирается автоматически. {user?.isPremium ? `Осталось ${maxCards - cards.length} карт` : `Лимит: ${cards.length}/${maxCards} карт`}
               </p>
             </div>
             <Button onClick={handleCreateCard} className="w-full">
@@ -966,6 +1115,15 @@ const Index = () => {
               <Icon name="Edit" size={20} className="mr-2" />
               Переименовать
             </Button>
+            <Button variant="outline" className="w-full justify-start" onClick={() => {
+              setCardDailyLimit(selectedCard?.dailyLimit?.toString() || '50000');
+              setCardMonthlyLimit(selectedCard?.monthlyLimit?.toString() || '300000');
+              setShowCardActionsDialog(false);
+              setShowCardLimitsDialog(true);
+            }}>
+              <Icon name="Shield" size={20} className="mr-2" />
+              Настроить лимиты
+            </Button>
             <Button variant="outline" className="w-full justify-start">
               <Icon name="Settings" size={20} className="mr-2" />
               Настройки карты
@@ -987,6 +1145,42 @@ const Index = () => {
         open={showCardDetailDialog}
         onClose={() => setShowCardDetailDialog(false)}
       />
+
+      <Dialog open={showCardLimitsDialog} onOpenChange={setShowCardLimitsDialog}>
+        <DialogContent>
+          <DialogHeader>
+            <DialogTitle>Настройка лимитов</DialogTitle>
+          </DialogHeader>
+          <div className="space-y-4">
+            <div>
+              <Label>Дневной лимит (₽)</Label>
+              <Input
+                type="number"
+                placeholder="50000"
+                value={cardDailyLimit}
+                onChange={(e) => setCardDailyLimit(e.target.value)}
+              />
+            </div>
+            <div>
+              <Label>Месячный лимит (₽)</Label>
+              <Input
+                type="number"
+                placeholder="300000"
+                value={cardMonthlyLimit}
+                onChange={(e) => setCardMonthlyLimit(e.target.value)}
+              />
+            </div>
+            <div className="bg-muted p-4 rounded-lg">
+              <p className="text-sm text-muted-foreground">
+                Установите лимиты для контроля расходов. Операции сверх лимита будут отклонены.
+              </p>
+            </div>
+            <Button onClick={handleSetCardLimits} className="w-full">
+              Сохранить лимиты
+            </Button>
+          </div>
+        </DialogContent>
+      </Dialog>
 
       <Dialog open={showCreditDialog} onOpenChange={setShowCreditDialog}>
         <DialogContent>
@@ -1020,11 +1214,86 @@ const Index = () => {
             </div>
             <div className="bg-muted p-4 rounded-lg">
               <p className="text-sm text-muted-foreground">
-                Кредит будет зачислен моментально. Без процентов и обязательных платежей.
+                {user?.isPremium 
+                  ? '🎉 Премиум: Безлимитные кредиты без ограничений!' 
+                  : `Максимальная сумма: ${maxCreditAmount.toLocaleString('ru-RU')}₽`}
               </p>
             </div>
             <Button onClick={handleCreditRequest} className="w-full">
               Получить кредит
+            </Button>
+          </div>
+        </DialogContent>
+      </Dialog>
+
+      <Dialog open={showPremiumDialog} onOpenChange={setShowPremiumDialog}>
+        <DialogContent className="max-w-md">
+          <DialogHeader>
+            <DialogTitle className="flex items-center gap-2">
+              <Icon name="Crown" className="text-yellow-500" />
+              Премиум Юган
+            </DialogTitle>
+          </DialogHeader>
+          <div className="space-y-6">
+            <div className="text-center">
+              <div className="w-20 h-20 bg-gradient-to-br from-yellow-400 to-amber-500 rounded-full mx-auto mb-4 flex items-center justify-center">
+                <Icon name="Crown" size={40} className="text-white" />
+              </div>
+              <h3 className="text-2xl font-bold mb-2">Откройте больше возможностей</h3>
+              <p className="text-muted-foreground">Получите эксклюзивные привилегии</p>
+            </div>
+
+            <div className="space-y-3">
+              <div className="flex items-start gap-3">
+                <div className="w-6 h-6 bg-green-100 rounded-full flex items-center justify-center flex-shrink-0">
+                  <Icon name="Check" size={16} className="text-green-600" />
+                </div>
+                <div>
+                  <p className="font-semibold">До 10 карт</p>
+                  <p className="text-sm text-muted-foreground">Создавайте до 10 карт одновременно</p>
+                </div>
+              </div>
+
+              <div className="flex items-start gap-3">
+                <div className="w-6 h-6 bg-green-100 rounded-full flex items-center justify-center flex-shrink-0">
+                  <Icon name="Check" size={16} className="text-green-600" />
+                </div>
+                <div>
+                  <p className="font-semibold">Безлимитные кредиты</p>
+                  <p className="text-sm text-muted-foreground">Получайте любую сумму без ограничений</p>
+                </div>
+              </div>
+
+              <div className="flex items-start gap-3">
+                <div className="w-6 h-6 bg-green-100 rounded-full flex items-center justify-center flex-shrink-0">
+                  <Icon name="Check" size={16} className="text-green-600" />
+                </div>
+                <div>
+                  <p className="font-semibold">Расширенные настройки</p>
+                  <p className="text-sm text-muted-foreground">Персональные лимиты и дополнительные опции</p>
+                </div>
+              </div>
+
+              <div className="flex items-start gap-3">
+                <div className="w-6 h-6 bg-green-100 rounded-full flex items-center justify-center flex-shrink-0">
+                  <Icon name="Check" size={16} className="text-green-600" />
+                </div>
+                <div>
+                  <p className="font-semibold">Приоритетная поддержка</p>
+                  <p className="text-sm text-muted-foreground">Быстрый ответ от Банк-Бонг</p>
+                </div>
+              </div>
+            </div>
+
+            <div className="bg-gradient-to-r from-yellow-50 to-amber-50 border border-yellow-200 rounded-lg p-4">
+              <p className="text-center text-sm mb-2">
+                <span className="font-bold text-2xl">БЕСПЛАТНО</span>
+              </p>
+              <p className="text-center text-xs text-muted-foreground">Пробная версия на 1 месяц</p>
+            </div>
+
+            <Button onClick={handleActivatePremium} className="w-full bg-gradient-to-r from-yellow-400 to-amber-500 hover:from-yellow-500 hover:to-amber-600 text-white" size="lg">
+              Активировать Премиум
             </Button>
           </div>
         </DialogContent>
@@ -1239,12 +1508,10 @@ const Index = () => {
               />
             </div>
             <div className="flex items-center space-x-2">
-              <input
-                type="checkbox"
+              <Switch
                 id="family"
                 checked={friendIsFamily}
-                onChange={(e) => setFriendIsFamily(e.target.checked)}
-                className="w-4 h-4"
+                onCheckedChange={setFriendIsFamily}
               />
               <Label htmlFor="family" className="cursor-pointer">
                 Добавить в семью (полный доступ)
